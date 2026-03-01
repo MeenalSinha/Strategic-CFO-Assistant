@@ -436,6 +436,51 @@ class DataAnalytics:
             'current_success_rate': (current_df['transaction_status'] == 'SUCCESS').mean() * 100
         }
     
+    def get_high_risk_combinations(self, top_n: int = 10) -> List[Dict]:
+        """Find riskiest combinations of region, device type, and network condition"""
+        # Group by all three dimensions
+        combinations = self.df.groupby(['sender_state', 'device_type', 'network_type']).agg({
+            'transaction id': 'count',
+            'is_failure': 'sum',
+            'lost_revenue': 'sum'
+        }).reset_index()
+        
+        combinations.columns = ['region', 'device_type', 'network_type', 'total_txns', 'failures', 'lost_revenue']
+        
+        # Calculate failure rate
+        combinations['failure_rate'] = (combinations['failures'] / combinations['total_txns'] * 100)
+        
+        # Calculate risk score (failure_rate * lost_revenue)
+        combinations['risk_score'] = combinations['failure_rate'] * combinations['lost_revenue']
+        
+        # Filter for significance (at least 100 transactions)
+        combinations = combinations[combinations['total_txns'] >= 100]
+        
+        # Sort by risk score
+        combinations = combinations.sort_values('risk_score', ascending=False)
+        
+        results = []
+        for _, row in combinations.head(top_n).iterrows():
+            confidence = self._calculate_confidence(
+                int(row['total_txns']),
+                100 - row['failure_rate']
+            )
+            
+            results.append({
+                'combination': f"{row['region']} + {row['device_type']} + {row['network_type']}",
+                'region': row['region'],
+                'device_type': row['device_type'],
+                'network_type': row['network_type'],
+                'failure_rate': row['failure_rate'],
+                'total_transactions': int(row['total_txns']),
+                'failed_transactions': int(row['failures']),
+                'lost_revenue': row['lost_revenue'],
+                'risk_score': row['risk_score'],
+                'confidence': confidence
+            })
+        
+        return results
+    
     def get_high_risk_segments(self, top_n: int = 5) -> List[Dict]:
         """Identify high-risk segments by failure rate and volume"""
         segments = []
@@ -519,7 +564,11 @@ class ConversationalAI:
             intent['type'] = 'impact_quantification'
             
         elif any(word in query_lower for word in ['risk', 'danger', 'problem', 'issue']):
-            intent['type'] = 'risk_analysis'
+            # Check if asking for combinations
+            if any(word in query_lower for word in ['combination', 'combinations', 'together', 'combined']):
+                intent['type'] = 'risk_combination'
+            else:
+                intent['type'] = 'risk_analysis'
             
         elif any(word in query_lower for word in ['if', 'would', 'could', 'scenario']):
             intent['type'] = 'counterfactual'
@@ -639,6 +688,10 @@ class ConversationalAI:
         elif intent['type'] == 'risk_analysis':
             response = self._analyze_risks(response)
             self.conversation_context['last_topic'] = 'risk assessment'
+        
+        elif intent['type'] == 'risk_combination':
+            response = self._analyze_risk_combinations(response)
+            self.conversation_context['last_topic'] = 'multi-dimensional risk analysis'
             
         elif intent['type'] == 'counterfactual':
             response = self._generate_counterfactual(current_period, comparison_period, response)
@@ -881,6 +934,66 @@ class ConversationalAI:
             "Implement enhanced monitoring for high-risk segments",
             "Consider temporary intervention measures to reduce failure rates",
             "Review and optimize processes in affected areas"
+        ]
+        
+        return response
+    
+    def _analyze_risk_combinations(self, response):
+        """Identify riskiest combinations of region, device type, and network"""
+        combinations = self.analytics.get_high_risk_combinations(top_n=10)
+        
+        narrative = "## 📌 Leadership Insight\n\n"
+        narrative += "**Multi-Dimensional Risk Combination Analysis:**\n\n"
+        narrative += "These specific combinations of region, device type, and network condition pose the highest operational risk:\n\n"
+        
+        for i, combo in enumerate(combinations, 1):
+            narrative += f"**{i}. {combo['region']} + {combo['device_type']} + {combo['network_type']}**\n"
+            narrative += f"   - Failure Rate: {combo['failure_rate']:.1f}%\n"
+            narrative += f"   - Failed Transactions: {combo['failed_transactions']:,} out of {combo['total_transactions']:,}\n"
+            narrative += f"   - Lost Revenue: ₹{combo['lost_revenue']:,.0f}\n"
+            narrative += f"   - Risk Score: {combo['risk_score']:,.0f}\n"
+            narrative += f"   - Confidence: {combo['confidence']['level']} ({combo['confidence']['score']:.0f}%)\n\n"
+        
+        # Calculate totals
+        total_at_risk = sum(c['lost_revenue'] for c in combinations)
+        total_failures = sum(c['failed_transactions'] for c in combinations)
+        
+        narrative += f"**Summary:**\n"
+        narrative += f"- Total combinations analyzed: {len(combinations)}\n"
+        narrative += f"- Total failed transactions: {total_failures:,}\n"
+        narrative += f"- Total revenue at risk: ₹{total_at_risk:,.0f}\n"
+        
+        response['narrative'] = narrative
+        response['insights'] = combinations
+        response['metrics'] = {
+            'total_at_risk': total_at_risk,
+            'total_failures': total_failures,
+            'combinations_count': len(combinations)
+        }
+        
+        # Average confidence across top combinations
+        avg_confidence = sum(c['confidence']['score'] for c in combinations[:3]) / min(3, len(combinations))
+        response['confidence'] = {
+            'score': avg_confidence,
+            'level': 'High' if avg_confidence >= 75 else 'Medium' if avg_confidence >= 50 else 'Low',
+            'note': 'Based on transaction volume across multi-dimensional combinations'
+        }
+        
+        # Specific decision suggestions
+        top_combo = combinations[0]
+        response['decision_suggestions'] = [
+            f"Immediate priority: Address failures in {top_combo['region']} using {top_combo['device_type']} on {top_combo['network_type']} network",
+            f"Deploy regional technical support for {top_combo['region']}",
+            f"Optimize transaction processing for {top_combo['device_type']} devices",
+            f"Investigate and improve {top_combo['network_type']} network reliability",
+            "Implement targeted monitoring for these specific combinations"
+        ]
+        
+        response['assumptions'] = [
+            "Combinations with at least 100 transactions included",
+            "Risk score calculated as failure_rate × lost_revenue",
+            "All three dimensions analyzed simultaneously",
+            "Regional, device, and network factors assumed independent"
         ]
         
         return response
