@@ -236,6 +236,9 @@ class DataAnalytics:
         # Potential revenue if transaction succeeded
         self.df['potential_revenue'] = self.df['amount (INR)']
         
+        # Lost revenue (for combinations analysis)
+        self.df['lost_revenue'] = self.df['potential_revenue'] - self.df['revenue']
+        
     def get_revenue_trend(self, period: str = 'daily', last_n: int = 30) -> pd.DataFrame:
         """Get revenue trends over time"""
         if period == 'daily':
@@ -440,7 +443,7 @@ class DataAnalytics:
         """Find riskiest combinations of region, device type, and network condition"""
         # Group by all three dimensions
         combinations = self.df.groupby(['sender_state', 'device_type', 'network_type']).agg({
-            'transaction id': 'count',
+            'transaction id': 'count',  # Column name has a space
             'is_failure': 'sum',
             'lost_revenue': 'sum'
         }).reset_index()
