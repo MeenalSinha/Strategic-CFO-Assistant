@@ -484,6 +484,178 @@ class DataAnalytics:
         
         return results
     
+    def compare_devices(self, period: Tuple) -> Dict:
+        """Compare performance between Android and iOS devices"""
+        period_df = self.df[(self.df['date'] >= period[0]) & (self.df['date'] <= period[1])]
+        
+        results = {}
+        for device in ['Android', 'iOS']:
+            device_df = period_df[period_df['device_type'] == device]
+            if len(device_df) > 0:
+                results[device] = {
+                    'total_transactions': len(device_df),
+                    'failed_transactions': int(device_df['is_failure'].sum()),
+                    'success_rate': (1 - device_df['is_failure'].mean()) * 100,
+                    'lost_revenue': device_df['lost_revenue'].sum(),
+                    'actual_revenue': device_df['revenue'].sum()
+                }
+        
+        return results
+    
+    def analyze_network_conditions(self, period: Tuple) -> List[Dict]:
+        """Analyze performance across different network types"""
+        period_df = self.df[(self.df['date'] >= period[0]) & (self.df['date'] <= period[1])]
+        
+        results = []
+        for network in period_df['network_type'].unique():
+            network_df = period_df[period_df['network_type'] == network]
+            results.append({
+                'network_type': network,
+                'total_transactions': len(network_df),
+                'success_rate': (1 - network_df['is_failure'].mean()) * 100,
+                'failed_transactions': int(network_df['is_failure'].sum()),
+                'lost_revenue': network_df['lost_revenue'].sum()
+            })
+        
+        results.sort(key=lambda x: x['success_rate'], reverse=True)
+        return results
+    
+    def get_channel_failure_trends(self, current_period: Tuple, prev_period: Tuple) -> Dict:
+        """Analyze failure trends by transaction type (payment channel)"""
+        current_df = self.df[(self.df['date'] >= current_period[0]) & (self.df['date'] <= current_period[1])]
+        prev_df = self.df[(self.df['date'] >= prev_period[0]) & (self.df['date'] <= prev_period[1])]
+        
+        results = {
+            'current_failure_rate': (current_df['is_failure'].mean() * 100),
+            'prev_failure_rate': (prev_df['is_failure'].mean() * 100),
+            'channels': []
+        }
+        
+        for channel in current_df['transaction type'].unique():
+            curr_channel = current_df[current_df['transaction type'] == channel]
+            prev_channel = prev_df[prev_df['transaction type'] == channel]
+            
+            curr_rate = (curr_channel['is_failure'].mean() * 100) if len(curr_channel) > 0 else 0
+            prev_rate = (prev_channel['is_failure'].mean() * 100) if len(prev_channel) > 0 else 0
+            
+            results['channels'].append({
+                'channel': channel,
+                'current_failure_rate': curr_rate,
+                'prev_failure_rate': prev_rate,
+                'change': curr_rate - prev_rate,
+                'failed_transactions': int(curr_channel['is_failure'].sum()),
+                'lost_revenue': curr_channel['lost_revenue'].sum()
+            })
+        
+        results['channels'].sort(key=lambda x: x['lost_revenue'], reverse=True)
+        return results
+    
+    def get_merchant_avg_transactions(self, period: Tuple, top_n: int = 5) -> List[Dict]:
+        """Get merchant categories ranked by average transaction amount"""
+        period_df = self.df[(self.df['date'] >= period[0]) & (self.df['date'] <= period[1])]
+        
+        results = []
+        for category in period_df['merchant_category'].unique():
+            cat_df = period_df[period_df['merchant_category'] == category]
+            results.append({
+                'category': category,
+                'avg_transaction': cat_df['amount (INR)'].mean(),
+                'total_transactions': len(cat_df),
+                'total_revenue': cat_df['revenue'].sum()
+            })
+        
+        results.sort(key=lambda x: x['avg_transaction'], reverse=True)
+        return results[:top_n]
+    
+    def analyze_age_group_trends(self, current_period: Tuple, prev_period: Tuple) -> List[Dict]:
+        """Analyze transaction activity and success rate trends by age group"""
+        current_df = self.df[(self.df['date'] >= current_period[0]) & (self.df['date'] <= current_period[1])]
+        prev_df = self.df[(self.df['date'] >= prev_period[0]) & (self.df['date'] <= prev_period[1])]
+        
+        results = []
+        for age_group in current_df['sender_age_group'].unique():
+            curr_age = current_df[current_df['sender_age_group'] == age_group]
+            prev_age = prev_df[prev_df['sender_age_group'] == age_group]
+            
+            curr_volume = len(curr_age)
+            prev_volume = len(prev_age) if len(prev_age) > 0 else 1
+            volume_change = ((curr_volume - prev_volume) / prev_volume * 100)
+            
+            curr_success = (1 - curr_age['is_failure'].mean()) * 100 if len(curr_age) > 0 else 0
+            prev_success = (1 - prev_age['is_failure'].mean()) * 100 if len(prev_age) > 0 else 0
+            
+            results.append({
+                'age_group': age_group,
+                'current_volume': curr_volume,
+                'prev_volume': len(prev_age),
+                'volume_change_pct': volume_change,
+                'current_success_rate': curr_success,
+                'prev_success_rate': prev_success,
+                'success_rate_change': curr_success - prev_success,
+                'is_declining': volume_change < -5 or (curr_success - prev_success) < -0.5
+            })
+        
+        results.sort(key=lambda x: x['volume_change_pct'])
+        return results
+    
+    def get_hourly_breakdown(self, period: Tuple) -> List[Dict]:
+        """Get comprehensive hourly breakdown of transactions"""
+        period_df = self.df[(self.df['date'] >= period[0]) & (self.df['date'] <= period[1])]
+        
+        results = []
+        for hour in range(24):
+            hour_df = period_df[period_df['hour'] == hour]
+            if len(hour_df) > 0:
+                results.append({
+                    'hour': hour,
+                    'volume': len(hour_df),
+                    'revenue': hour_df['revenue'].sum(),
+                    'avg_transaction': hour_df['amount (INR)'].mean(),
+                    'success_rate': (1 - hour_df['is_failure'].mean()) * 100
+                })
+            else:
+                results.append({
+                    'hour': hour,
+                    'volume': 0,
+                    'revenue': 0,
+                    'avg_transaction': 0,
+                    'success_rate': 0
+                })
+        
+        return results
+    
+    def detect_failure_anomalies(self, period: Tuple, threshold: float = 1.5) -> Dict:
+        """Detect unusual spikes in failure rates"""
+        period_df = self.df[(self.df['date'] >= period[0]) & (self.df['date'] <= period[1])]
+        
+        avg_failure_rate = period_df['is_failure'].mean() * 100
+        
+        daily = period_df.groupby('date').agg({
+            'is_failure': ['sum', 'count', 'mean'],
+            'lost_revenue': 'sum'
+        })
+        
+        daily.columns = ['failures', 'total', 'failure_rate', 'lost_revenue']
+        daily['failure_rate'] = daily['failure_rate'] * 100
+        
+        anomalies = []
+        for date, row in daily.iterrows():
+            if row['failure_rate'] > (avg_failure_rate * threshold):
+                anomalies.append({
+                    'date': date,
+                    'failure_rate': row['failure_rate'],
+                    'failures': int(row['failures']),
+                    'total_transactions': int(row['total']),
+                    'lost_revenue': row['lost_revenue'],
+                    'vs_average': row['failure_rate'] - avg_failure_rate
+                })
+        
+        return {
+            'average_failure_rate': avg_failure_rate,
+            'threshold': avg_failure_rate * threshold,
+            'anomalies': sorted(anomalies, key=lambda x: x['failure_rate'], reverse=True)
+        }
+    
     def get_high_risk_segments(self, top_n: int = 5) -> List[Dict]:
         """Identify high-risk segments by failure rate and volume"""
         segments = []
@@ -551,8 +723,36 @@ class ConversationalAI:
             'specific_value': None
         }
         
-        # Detect query type
-        if any(word in query_lower for word in ['revenue', 'sales', 'income', 'earning']):
+        # Detect specific dimensional queries first (most specific patterns)
+        if any(word in query_lower for word in ['android', 'ios']) and any(word in query_lower for word in ['performance', 'different', 'compare', 'between']):
+            intent['type'] = 'device_comparison'
+            
+        elif any(word in query_lower for word in ['network', '5g', 'wifi', '4g', '3g']) and any(word in query_lower for word in ['condition', 'impact', 'affect', 'success']):
+            intent['type'] = 'network_analysis'
+            
+        elif any(word in query_lower for word in ['age group', 'age', 'demographic']) and any(word in query_lower for word in ['declining', 'decline', 'activity', 'success', 'show']):
+            intent['type'] = 'age_analysis'
+            
+        elif any(word in query_lower for word in ['merchant category', 'merchant', 'category', 'categories']) and any(word in query_lower for word in ['highest', 'average', 'transaction amount']):
+            intent['type'] = 'merchant_analysis'
+            
+        elif any(word in query_lower for word in ['hour', 'time', 'peak', 'what hours']) and any(word in query_lower for word in ['volume', 'value', 'transaction', 'day']):
+            intent['type'] = 'hourly_analysis'
+            
+        elif any(word in query_lower for word in ['channel', 'payment channel']) and any(word in query_lower for word in ['failure', 'affected', 'increasing']):
+            intent['type'] = 'channel_failure_analysis'
+            
+        elif any(word in query_lower for word in ['refund', 'chargeback']) and any(word in query_lower for word in ['region', 'state', 'where', 'specific']):
+            intent['type'] = 'regional_refund_analysis'
+            
+        elif any(word in query_lower for word in ['spike', 'unusual', 'sudden', 'anomaly', 'anomalies']) and any(word in query_lower for word in ['failure', 'issue', 'attention']):
+            intent['type'] = 'anomaly_detection'
+            
+        elif any(word in query_lower for word in ['success rate']) and any(word in query_lower for word in ['current', 'changed', 'trend', 'over time']):
+            intent['type'] = 'success_rate_trend'
+        
+        # Detect query type (existing patterns)
+        elif any(word in query_lower for word in ['revenue', 'sales', 'income', 'earning', 'transaction value']):
             if any(word in query_lower for word in ['drop', 'decline', 'decrease', 'fall', 'down', 'lower']):
                 intent['type'] = 'revenue_decline'
             elif any(word in query_lower for word in ['increase', 'rise', 'grow', 'up', 'higher']):
@@ -563,7 +763,7 @@ class ConversationalAI:
         elif any(word in query_lower for word in ['why', 'reason', 'cause', 'explain']):
             intent['type'] = 'root_cause'
             
-        elif any(word in query_lower for word in ['impact', 'loss', 'cost', 'money', 'much']):
+        elif any(word in query_lower for word in ['how much', 'revenue at risk', 'at risk']):
             intent['type'] = 'impact_quantification'
             
         elif any(word in query_lower for word in ['risk', 'danger', 'problem', 'issue']):
@@ -573,10 +773,10 @@ class ConversationalAI:
             else:
                 intent['type'] = 'risk_analysis'
             
-        elif any(word in query_lower for word in ['if', 'would', 'could', 'scenario']):
+        elif any(word in query_lower for word in ['if', 'would', 'could', 'scenario', 'remained', 'had remained']):
             intent['type'] = 'counterfactual'
             
-        elif any(word in query_lower for word in ['region', 'state', 'location', 'where']):
+        elif any(word in query_lower for word in ['region', 'state', 'location', 'where']) and any(word in query_lower for word in ['contributed', 'most']):
             intent['type'] = 'regional_analysis'
             intent['specific_dimension'] = 'region'
             
@@ -699,6 +899,43 @@ class ConversationalAI:
         elif intent['type'] == 'counterfactual':
             response = self._generate_counterfactual(current_period, comparison_period, response)
             self.conversation_context['last_topic'] = 'scenario analysis'
+        
+        # New specific analysis types
+        elif intent['type'] == 'device_comparison':
+            response = self._compare_device_performance(current_period, response)
+            self.conversation_context['last_topic'] = 'device performance comparison'
+        
+        elif intent['type'] == 'network_analysis':
+            response = self._analyze_network_impact(current_period, response)
+            self.conversation_context['last_topic'] = 'network condition analysis'
+        
+        elif intent['type'] == 'channel_failure_analysis':
+            response = self._analyze_channel_failures(current_period, comparison_period, response)
+            self.conversation_context['last_topic'] = 'payment channel failures'
+        
+        elif intent['type'] == 'merchant_analysis':
+            response = self._analyze_merchant_values(current_period, response)
+            self.conversation_context['last_topic'] = 'merchant category analysis'
+        
+        elif intent['type'] == 'age_analysis':
+            response = self._analyze_age_trends(current_period, comparison_period, response)
+            self.conversation_context['last_topic'] = 'age group trends'
+        
+        elif intent['type'] == 'hourly_analysis':
+            response = self._analyze_hourly_patterns(current_period, response)
+            self.conversation_context['last_topic'] = 'hourly transaction patterns'
+        
+        elif intent['type'] == 'anomaly_detection':
+            response = self._detect_anomalies(current_period, response)
+            self.conversation_context['last_topic'] = 'failure anomaly detection'
+        
+        elif intent['type'] == 'success_rate_trend':
+            response = self._analyze_success_rate_trends(current_period, comparison_period, response)
+            self.conversation_context['last_topic'] = 'success rate trends'
+        
+        elif intent['type'] == 'regional_refund_analysis':
+            response = self._analyze_regional_issues(current_period, response)
+            self.conversation_context['last_topic'] = 'regional analysis'
             
         else:
             response = self._general_overview(current_period, response)
@@ -997,6 +1234,380 @@ class ConversationalAI:
             "Risk score calculated as failure_rate × lost_revenue",
             "All three dimensions analyzed simultaneously",
             "Regional, device, and network factors assumed independent"
+        ]
+        
+        return response
+        
+        return response
+    
+    def _compare_device_performance(self, current_period, response):
+        """Compare Android vs iOS performance"""
+        devices = self.analytics.compare_devices(current_period)
+        
+        period_label = self._get_period_label(current_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Device Performance Comparison** for {period_label}:\n\n"
+        
+        if 'Android' in devices and 'iOS' in devices:
+            android = devices['Android']
+            ios = devices['iOS']
+            
+            diff = android['success_rate'] - ios['success_rate']
+            better = "Android" if diff > 0 else "iOS"
+            
+            narrative += f"**Android:**\n"
+            narrative += f"- Success Rate: {android['success_rate']:.1f}%\n"
+            narrative += f"- Total Transactions: {android['total_transactions']:,}\n"
+            narrative += f"- Failed Transactions: {android['failed_transactions']:,}\n"
+            narrative += f"- Lost Revenue: ₹{android['lost_revenue']:,.0f}\n\n"
+            
+            narrative += f"**iOS:**\n"
+            narrative += f"- Success Rate: {ios['success_rate']:.1f}%\n"
+            narrative += f"- Total Transactions: {ios['total_transactions']:,}\n"
+            narrative += f"- Failed Transactions: {ios['failed_transactions']:,}\n"
+            narrative += f"- Lost Revenue: ₹{ios['lost_revenue']:,.0f}\n\n"
+            
+            narrative += f"**Key Finding:** {better} devices show {abs(diff):.1f}% better success rate"
+            
+            response['metrics'] = {
+                'android_success': android['success_rate'],
+                'ios_success': ios['success_rate'],
+                'difference': abs(diff)
+            }
+            
+            response['decision_suggestions'] = [
+                f"Focus optimization efforts on {('Android' if diff < 0 else 'iOS')} platform",
+                "Investigate device-specific failure patterns",
+                "Consider device-specific testing and quality assurance"
+            ]
+        else:
+            narrative += "Insufficient data for device comparison."
+        
+        response['narrative'] = narrative
+        response['confidence'] = {'score': 85, 'level': 'High', 'note': 'Based on comprehensive device data'}
+        
+        return response
+    
+    def _analyze_network_impact(self, current_period, response):
+        """Analyze network condition impact on success rates"""
+        networks = self.analytics.analyze_network_conditions(current_period)
+        
+        period_label = self._get_period_label(current_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Network Condition Performance** for {period_label}:\n\n"
+        
+        for i, net in enumerate(networks, 1):
+            narrative += f"**{i}. {net['network_type']}:**\n"
+            narrative += f"   - Success Rate: {net['success_rate']:.1f}%\n"
+            narrative += f"   - Transactions: {net['total_transactions']:,}\n"
+            narrative += f"   - Failed: {net['failed_transactions']:,}\n"
+            narrative += f"   - Lost Revenue: ₹{net['lost_revenue']:,.0f}\n\n"
+        
+        if len(networks) > 0:
+            best = networks[0]
+            worst = networks[-1]
+            narrative += f"**Key Finding:** {best['network_type']} shows best performance ({best['success_rate']:.1f}%), "
+            narrative += f"while {worst['network_type']} shows lowest ({worst['success_rate']:.1f}%)"
+            
+            response['decision_suggestions'] = [
+                f"Optimize transaction processing for {worst['network_type']} connections",
+                f"Implement {worst['network_type']}-specific retry mechanisms",
+                "Monitor network quality metrics in real-time"
+            ]
+        
+        response['narrative'] = narrative
+        response['insights'] = networks
+        response['confidence'] = {'score': 80, 'level': 'High', 'note': 'Based on network condition data'}
+        
+        return response
+    
+    def _analyze_channel_failures(self, current_period, comparison_period, response):
+        """Analyze failure trends across payment channels"""
+        trends = self.analytics.get_channel_failure_trends(current_period, comparison_period)
+        
+        period_label = self._get_period_label(current_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Payment Channel Failure Analysis** for {period_label}:\n\n"
+        
+        narrative += f"**Overall Trend:**\n"
+        narrative += f"- Current Failure Rate: {trends['current_failure_rate']:.2f}%\n"
+        narrative += f"- Previous Failure Rate: {trends['prev_failure_rate']:.2f}%\n"
+        narrative += f"- Change: {(trends['current_failure_rate'] - trends['prev_failure_rate']):+.2f}%\n\n"
+        
+        if trends['current_failure_rate'] > trends['prev_failure_rate']:
+            narrative += "⚠️ **Failures are INCREASING**\n\n"
+        else:
+            narrative += "✅ **Failures are DECREASING**\n\n"
+        
+        narrative += f"**Channel Breakdown:**\n"
+        for i, channel in enumerate(trends['channels'][:5], 1):
+            trend_indicator = "📈" if channel['change'] > 0 else "📉"
+            narrative += f"{i}. **{channel['channel']}** {trend_indicator}\n"
+            narrative += f"   - Current: {channel['current_failure_rate']:.1f}%\n"
+            narrative += f"   - Previous: {channel['prev_failure_rate']:.1f}%\n"
+            narrative += f"   - Change: {channel['change']:+.1f}%\n"
+            narrative += f"   - Lost Revenue: ₹{channel['lost_revenue']:,.0f}\n\n"
+        
+        response['narrative'] = narrative
+        response['insights'] = trends
+        response['confidence'] = {'score': 75, 'level': 'High', 'note': 'Based on comprehensive channel data'}
+        
+        worst_channel = trends['channels'][0]
+        response['decision_suggestions'] = [
+            f"Immediate focus on {worst_channel['channel']} channel (₹{worst_channel['lost_revenue']:,.0f} at risk)",
+            "Implement channel-specific monitoring and alerts",
+            "Review and optimize failure-prone payment flows"
+        ]
+        
+        return response
+    
+    def _analyze_merchant_values(self, current_period, response):
+        """Analyze merchant categories by average transaction value"""
+        merchants = self.analytics.get_merchant_avg_transactions(current_period, top_n=5)
+        
+        period_label = self._get_period_label(current_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Merchant Categories by Average Transaction Value** for {period_label}:\n\n"
+        
+        for i, merchant in enumerate(merchants, 1):
+            narrative += f"**{i}. {merchant['category']}**\n"
+            narrative += f"   - Avg Transaction: ₹{merchant['avg_transaction']:,.0f}\n"
+            narrative += f"   - Total Transactions: {merchant['total_transactions']:,}\n"
+            narrative += f"   - Total Revenue: ₹{merchant['total_revenue']:,.0f}\n\n"
+        
+        if len(merchants) > 0:
+            highest = merchants[0]
+            narrative += f"**Key Finding:** {highest['category']} shows highest average transaction value at ₹{highest['avg_transaction']:,.0f}"
+        
+        response['narrative'] = narrative
+        response['insights'] = merchants
+        response['confidence'] = {'score': 85, 'level': 'High', 'note': 'Based on merchant category data'}
+        
+        response['decision_suggestions'] = [
+            f"Focus high-value customer acquisition in {merchants[0]['category']} category",
+            "Develop targeted promotions for high-value categories",
+            "Optimize checkout experience for high-value transactions"
+        ]
+        
+        return response
+    
+    def _analyze_age_trends(self, current_period, comparison_period, response):
+        """Analyze age group trends"""
+        trends = self.analytics.analyze_age_group_trends(current_period, comparison_period)
+        
+        period_label = self._get_period_label(current_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Age Group Performance Trends** for {period_label}:\n\n"
+        
+        declining = [t for t in trends if t['is_declining']]
+        stable = [t for t in trends if not t['is_declining']]
+        
+        if declining:
+            narrative += f"**Declining Performance:**\n"
+            for age in declining:
+                narrative += f"- **{age['age_group']}**: Volume {age['volume_change_pct']:+.1f}%, "
+                narrative += f"Success Rate {age['current_success_rate']:.1f}% ({age['success_rate_change']:+.1f}%)\n"
+            narrative += "\n"
+        
+        if stable:
+            narrative += f"**Stable/Growing:**\n"
+            for age in stable:
+                narrative += f"- **{age['age_group']}**: Volume {age['volume_change_pct']:+.1f}%, "
+                narrative += f"Success Rate {age['current_success_rate']:.1f}% ({age['success_rate_change']:+.1f}%)\n"
+        
+        response['narrative'] = narrative
+        response['insights'] = trends
+        response['confidence'] = {'score': 70, 'level': 'Medium', 'note': 'Based on age group trends'}
+        
+        if declining:
+            worst = declining[0]
+            response['decision_suggestions'] = [
+                f"Investigate declining activity in {worst['age_group']} demographic",
+                "Develop targeted retention campaigns for at-risk age groups",
+                "Analyze competitive dynamics affecting specific demographics"
+            ]
+        
+        return response
+    
+    def _analyze_hourly_patterns(self, current_period, response):
+        """Analyze hourly transaction patterns"""
+        hourly = self.analytics.get_hourly_breakdown(current_period)
+        
+        period_label = self._get_period_label(current_period)
+        
+        by_volume = sorted(hourly, key=lambda x: x['volume'], reverse=True)
+        by_revenue = sorted(hourly, key=lambda x: x['revenue'], reverse=True)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Hourly Transaction Patterns** for {period_label}:\n\n"
+        
+        narrative += f"**Peak Volume Hours:**\n"
+        for i, hour in enumerate(by_volume[:3], 1):
+            narrative += f"{i}. {hour['hour']:02d}:00-{(hour['hour']+1):02d}:00: "
+            narrative += f"{hour['volume']:,} transactions (₹{hour['revenue']:,.0f})\n"
+        narrative += "\n"
+        
+        narrative += f"**Peak Revenue Hours:**\n"
+        for i, hour in enumerate(by_revenue[:3], 1):
+            narrative += f"{i}. {hour['hour']:02d}:00-{(hour['hour']+1):02d}:00: "
+            narrative += f"₹{hour['revenue']:,.0f} ({hour['volume']:,} transactions)\n"
+        
+        response['narrative'] = narrative
+        response['insights'] = hourly
+        response['confidence'] = {'score': 90, 'level': 'High', 'note': 'Based on comprehensive hourly data'}
+        
+        peak_hour = by_volume[0]
+        response['decision_suggestions'] = [
+            f"Ensure optimal system capacity during peak hours ({peak_hour['hour']:02d}:00-{(peak_hour['hour']+2):02d}:00)",
+            "Schedule maintenance during low-traffic hours",
+            "Implement surge pricing or promotions during off-peak hours"
+        ]
+        
+        return response
+    
+    def _detect_anomalies(self, current_period, response):
+        """Detect failure anomalies"""
+        anomaly_data = self.analytics.detect_failure_anomalies(current_period)
+        
+        period_label = self._get_period_label(current_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Failure Anomaly Detection** for {period_label}:\n\n"
+        
+        narrative += f"**Baseline:**\n"
+        narrative += f"- Average Failure Rate: {anomaly_data['average_failure_rate']:.2f}%\n"
+        narrative += f"- Anomaly Threshold: {anomaly_data['threshold']:.2f}%\n\n"
+        
+        if len(anomaly_data['anomalies']) > 0:
+            narrative += f"**⚠️ Unusual Spikes Detected:**\n\n"
+            for i, anomaly in enumerate(anomaly_data['anomalies'][:5], 1):
+                narrative += f"{i}. **{anomaly['date']}**\n"
+                narrative += f"   - Failure Rate: {anomaly['failure_rate']:.2f}% (vs {anomaly_data['average_failure_rate']:.2f}% avg)\n"
+                narrative += f"   - Failed Transactions: {anomaly['failures']:,} out of {anomaly['total_transactions']:,}\n"
+                narrative += f"   - Lost Revenue: ₹{anomaly['lost_revenue']:,.0f}\n\n"
+            
+            response['decision_suggestions'] = [
+                f"Investigate root cause of spike on {anomaly_data['anomalies'][0]['date']}",
+                "Implement early warning system for failure rate spikes",
+                "Review system logs and incidents during anomaly periods"
+            ]
+        else:
+            narrative += "✅ **No Critical Spikes Detected**\n\n"
+            narrative += "System operating within normal variance range."
+            
+            response['decision_suggestions'] = [
+                "Continue monitoring daily failure rates",
+                "Maintain current system stability measures"
+            ]
+        
+        response['narrative'] = narrative
+        response['insights'] = anomaly_data
+        response['confidence'] = {'score': 85, 'level': 'High', 'note': 'Based on statistical anomaly detection'}
+        
+        return response
+    
+    def _analyze_success_rate_trends(self, current_period, comparison_period, response):
+        """Analyze success rate trends over time"""
+        current_df = self.analytics.df[(self.analytics.df['date'] >= current_period[0]) & (self.analytics.df['date'] <= current_period[1])]
+        prev_df = self.analytics.df[(self.analytics.df['date'] >= comparison_period[0]) & (self.analytics.df['date'] <= comparison_period[1])]
+        
+        current_rate = (1 - current_df['is_failure'].mean()) * 100
+        prev_rate = (1 - prev_df['is_failure'].mean()) * 100
+        change = current_rate - prev_rate
+        
+        period_label = self._get_period_label(current_period)
+        prev_label = self._get_period_label(comparison_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Success Rate Trend Analysis:**\n\n"
+        
+        narrative += f"**Current Period ({period_label}):**\n"
+        narrative += f"- Success Rate: {current_rate:.2f}%\n"
+        narrative += f"- Failure Rate: {(100-current_rate):.2f}%\n"
+        narrative += f"- Total Transactions: {len(current_df):,}\n\n"
+        
+        narrative += f"**Previous Period ({prev_label}):**\n"
+        narrative += f"- Success Rate: {prev_rate:.2f}%\n"
+        narrative += f"- Failure Rate: {(100-prev_rate):.2f}%\n"
+        narrative += f"- Total Transactions: {len(prev_df):,}\n\n"
+        
+        if change > 0:
+            narrative += f"✅ **Success rate IMPROVED by {change:.2f}%**"
+            trend = "improving"
+        elif change < -0.1:
+            narrative += f"⚠️ **Success rate DECLINED by {abs(change):.2f}%**"
+            trend = "declining"
+        else:
+            narrative += f"**Success rate STABLE** (change: {change:+.2f}%)"
+            trend = "stable"
+        
+        response['narrative'] = narrative
+        response['metrics'] = {
+            'current_success_rate': current_rate,
+            'prev_success_rate': prev_rate,
+            'change': change
+        }
+        response['confidence'] = {'score': 90, 'level': 'High', 'note': 'Based on comprehensive transaction data'}
+        
+        if trend == "declining":
+            response['decision_suggestions'] = [
+                "Immediate investigation required into declining success rates",
+                "Review recent system changes or updates",
+                "Implement corrective measures to restore performance"
+            ]
+        elif trend == "improving":
+            response['decision_suggestions'] = [
+                "Document and maintain factors driving improvement",
+                "Share best practices across teams",
+                "Continue monitoring to sustain gains"
+            ]
+        
+        return response
+    
+    def _analyze_regional_issues(self, current_period, response):
+        """Analyze regional issues (proxy for refund/chargeback when data unavailable)"""
+        period_df = self.analytics.df[(self.analytics.df['date'] >= current_period[0]) & (self.analytics.df['date'] <= current_period[1])]
+        
+        regional = []
+        for region in period_df['sender_state'].unique():
+            region_df = period_df[period_df['sender_state'] == region]
+            regional.append({
+                'region': region,
+                'failure_rate': (region_df['is_failure'].mean() * 100),
+                'lost_revenue': region_df['lost_revenue'].sum(),
+                'total_transactions': len(region_df)
+            })
+        
+        regional.sort(key=lambda x: x['failure_rate'], reverse=True)
+        
+        period_label = self._get_period_label(current_period)
+        
+        narrative = f"## 📌 Leadership Insight\n\n"
+        narrative += f"**Regional Risk Analysis** for {period_label}:\n\n"
+        narrative += "⚠️ *Note: Refund/chargeback data not available. Showing failure rates as proxy indicator.*\n\n"
+        
+        narrative += "**High-Risk Regions (by Failure Rate):**\n"
+        for i, region in enumerate(regional[:5], 1):
+            narrative += f"{i}. **{region['region']}**\n"
+            narrative += f"   - Failure Rate: {region['failure_rate']:.1f}%\n"
+            narrative += f"   - Lost Revenue: ₹{region['lost_revenue']:,.0f}\n"
+            narrative += f"   - Transactions: {region['total_transactions']:,}\n\n"
+        
+        narrative += "**Recommendation:** Integrate refund/chargeback data for comprehensive risk analysis."
+        
+        response['narrative'] = narrative
+        response['insights'] = regional
+        response['confidence'] = {'score': 60, 'level': 'Medium', 'note': 'Based on failure rates (refund data not available)'}
+        
+        response['decision_suggestions'] = [
+            f"Investigate operational issues in {regional[0]['region']}",
+            "Integrate refund and chargeback tracking systems",
+            "Deploy regional support for high-risk areas"
         ]
         
         return response
