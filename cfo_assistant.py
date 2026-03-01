@@ -1255,14 +1255,37 @@ def main():
                     cols = st.columns(4)
                     metrics = message["data"]["metrics"]
                     
+                    # For revenue change analysis
                     if 'revenue2' in metrics:
                         cols[0].metric("Revenue", f"₹{metrics['revenue2']:,.0f}", 
                                      delta=f"{metrics['revenue_change_pct']:+.1f}%")
                         cols[1].metric("Success Rate", f"{metrics['success_rate2']:.1f}%",
                                      delta=f"{metrics['success_rate_change']:+.1f}%")
+                        if 'lost_revenue' in metrics:
+                            cols[2].metric("Lost Revenue", f"₹{metrics.get('lost_revenue', 0):,.0f}")
                     
-                    if 'lost_revenue' in metrics:
+                    # For impact quantification
+                    elif 'actual_revenue' in metrics and 'potential_revenue' in metrics:
+                        cols[0].metric("Actual Revenue", f"₹{metrics['actual_revenue']:,.0f}")
+                        cols[1].metric("Potential Revenue", f"₹{metrics['potential_revenue']:,.0f}")
                         cols[2].metric("Lost Revenue", f"₹{metrics['lost_revenue']:,.0f}")
+                        if 'failure_rate' in metrics:
+                            cols[3].metric("Failure Rate", f"{metrics['failure_rate']:.2f}%")
+                    
+                    # For counterfactual analysis
+                    elif 'counterfactual_revenue' in metrics:
+                        cols[0].metric("Actual Revenue", f"₹{metrics['actual_revenue']:,.0f}")
+                        cols[1].metric("Expected Revenue", f"₹{metrics['counterfactual_revenue']:,.0f}")
+                        cols[2].metric("Difference", f"₹{abs(metrics['difference']):,.0f}",
+                                     delta="Higher" if metrics['difference'] < 0 else "Lower")
+                    
+                    # For risk analysis
+                    elif 'total_at_risk' in metrics:
+                        cols[0].metric("Total at Risk", f"₹{metrics['total_at_risk']:,.0f}")
+                        if 'total_failures' in metrics:
+                            cols[1].metric("Total Failures", f"{metrics['total_failures']:,}")
+                        if 'combinations_count' in metrics:
+                            cols[2].metric("Combinations", f"{metrics['combinations_count']}")
                     
                 # Display confidence
                 if "confidence" in message["data"]:
@@ -1317,20 +1340,38 @@ def main():
                     cols = st.columns(4)
                     metrics = response['metrics']
                     
+                    # For revenue change analysis
                     if 'revenue2' in metrics:
                         cols[0].metric("Revenue", f"₹{metrics['revenue2']:,.0f}", 
                                      delta=f"{metrics['revenue_change_pct']:+.1f}%")
                         cols[1].metric("Success Rate", f"{metrics['success_rate2']:.1f}%",
                                      delta=f"{metrics['success_rate_change']:+.1f}%")
+                        if 'lost_revenue' in metrics:
+                            cols[2].metric("Lost Revenue", f"₹{metrics.get('lost_revenue', 0):,.0f}")
                     
-                    if 'lost_revenue' in metrics:
-                        cols[2].metric("Lost Revenue", f"₹{metrics['lost_revenue']:,.0f}")
-                    
-                    if 'actual_revenue' in metrics:
+                    # For impact quantification (has all three keys together)
+                    elif 'actual_revenue' in metrics and 'potential_revenue' in metrics:
                         cols[0].metric("Actual Revenue", f"₹{metrics['actual_revenue']:,.0f}")
                         cols[1].metric("Potential Revenue", f"₹{metrics['potential_revenue']:,.0f}")
                         cols[2].metric("Lost Revenue", f"₹{metrics['lost_revenue']:,.0f}")
-                        cols[3].metric("Failure Rate", f"{metrics['failure_rate']:.2f}%")
+                        if 'failure_rate' in metrics:
+                            cols[3].metric("Failure Rate", f"{metrics['failure_rate']:.2f}%")
+                    
+                    # For counterfactual analysis
+                    elif 'counterfactual_revenue' in metrics:
+                        cols[0].metric("Actual Revenue", f"₹{metrics['actual_revenue']:,.0f}")
+                        cols[1].metric("Expected Revenue", f"₹{metrics['counterfactual_revenue']:,.0f}")
+                        cols[2].metric("Difference", f"₹{abs(metrics['difference']):,.0f}",
+                                     delta="Higher" if metrics['difference'] < 0 else "Lower")
+                    
+                    # For risk analysis
+                    elif 'total_at_risk' in metrics:
+                        cols[0].metric("Total at Risk", f"₹{metrics['total_at_risk']:,.0f}")
+                        if 'total_failures' in metrics:
+                            cols[1].metric("Total Failures", f"{metrics['total_failures']:,}")
+                        if 'combinations_count' in metrics:
+                            cols[2].metric("Combinations", f"{metrics['combinations_count']}")
+
                 
                 # Display confidence
                 if response.get('confidence'):
